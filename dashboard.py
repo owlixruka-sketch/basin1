@@ -780,88 +780,6 @@ GLOSSARY_DATA = {
 # LAYOUT COMPONENTS
 # ==================
 
-def get_framework_diagram():
-    # Sankey Diagram for WA+ Equation 2
-    fig = go.Figure(data=[go.Sankey(
-        node = dict(
-          pad = 15,
-          thickness = 20,
-          line = dict(color = "black", width = 0.5),
-          label = ["Precipitation (P)", "Inflows (Qin)", "Basin Water Resources",
-                   "Evapotranspiration (ET)", "Consumption (CWsec)", "Treated Wastewater (QWWT)",
-                   "Recharge (Qre)", "Natural Outflow (Qnatural)"],
-          color = [THEME_COLOR, THEME_COLOR, "#2ecc71", "#e74c3c", "#e74c3c", "#e74c3c", "#e74c3c", "#e74c3c"]
-        ),
-        link = dict(
-          source = [0, 1, 2, 2, 2, 2, 2], # indices match labels
-          target = [2, 2, 3, 4, 5, 6, 7],
-          value =  [400, 50, 200, 100, 50, 50, 50] # Arbitrary representative values
-      ))])
-
-    fig.update_layout(title_text="Water Balance Framework Flow", font_size=12, height=400, plot_bgcolor='white')
-    return fig
-
-def get_intro_charts():
-    # 1. Partners Network Graph (simplified as Scatter)
-    pos = {
-        "USAID": (0, 1),
-        "WEC": (0, 0),
-        "IWMI": (-1, 0),
-        "MWI": (1, 0.5),
-        "MoA": (1, -0.5)
-    }
-
-    edge_x = []
-    edge_y = []
-    for edge in [("USAID", "WEC"), ("IWMI", "WEC"), ("WEC", "MWI"), ("WEC", "MoA")]:
-        x0, y0 = pos[edge[0]]
-        x1, y1 = pos[edge[1]]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-
-    edge_trace = go.Scatter(
-        x=edge_x, y=edge_y,
-        line=dict(width=2, color='#888'),
-        hoverinfo='none',
-        mode='lines')
-
-    node_x = [pos[k][0] for k in pos]
-    node_y = [pos[k][1] for k in pos]
-    node_text = list(pos.keys())
-
-    node_trace = go.Scatter(
-        x=node_x, y=node_y,
-        mode='markers+text',
-        text=node_text,
-        textposition="top center",
-        marker=dict(
-            showscale=False,
-            color=THEME_COLOR,
-            size=30,
-            line_width=2))
-
-    fig_network = go.Figure(data=[edge_trace, node_trace],
-                 layout=go.Layout(
-                    title='Project Partnership Structure',
-                    showlegend=False,
-                    hovermode='closest',
-                    margin=dict(b=20,l=5,r=5,t=40),
-                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    plot_bgcolor='white',
-                    height=300
-                    ))
-
-    # 2. Water Scarcity Drivers
-    drivers = ["Population Growth", "Climate Change", "Water Demand", "Urbanization"]
-    impact = [85, 75, 90, 60]
-
-    fig_bar = px.bar(x=drivers, y=impact, title="Drivers of Water Scarcity",
-                     labels={'x': 'Driver', 'y': 'Relative Impact Score'})
-    fig_bar.update_traces(marker_color=THEME_COLOR)
-    fig_bar.update_layout(plot_bgcolor='white', height=300)
-
-    return fig_network, fig_bar
 
 def get_header():
     return html.Nav(
@@ -1093,13 +1011,7 @@ def get_modern_analysis_layout():
                          dbc.CardHeader("Resource Base (Sheet 1)", style={"fontWeight": "bold", "backgroundColor": "#eff6ff"}),
                          dbc.CardBody(dcc.Loading(html.Div(id="wa-resource-base-container"), type="circle"))
                     ], className="shadow-sm mb-4")
-                ], width=12, lg=6),
-                dbc.Col([
-                    dbc.Card([
-                         dbc.CardHeader("Sectoral Consumption", style={"fontWeight": "bold", "backgroundColor": "#eff6ff"}),
-                         dbc.CardBody(dcc.Loading(dcc.Graph(id="wa-sectoral-bar"), type="circle"))
-                    ], className="shadow-sm mb-4")
-                ], width=12, lg=6)
+                ], width=12, lg=12)
             ]),
             html.Div(id="wa-indicators-container", className="mt-3")
         ])
@@ -1123,15 +1035,10 @@ def render_tab_content(active_tab):
         return get_home_content()
 
     elif active_tab == "tab-intro":
-        fig_network, fig_scarcity = get_intro_charts()
         return html.Div(className="container", style={"maxWidth": "1200px"}, children=[
              html.Div(className="graph-card", style={"padding": "30px", "backgroundColor": "white", "borderRadius": "10px", "boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "marginBottom": "30px"}, children=[
                 html.H2("Introduction", style={"color": THEME_COLOR, "marginBottom": "20px"}),
                 dcc.Markdown(INTRO_TEXT, className="markdown-content"),
-                dbc.Row([
-                    dbc.Col(dcc.Graph(figure=fig_network, config={'displayModeBar': False}), width=12, lg=6),
-                    dbc.Col(dcc.Graph(figure=fig_scarcity, config={'displayModeBar': False}), width=12, lg=6),
-                ], style={"marginTop": "30px"})
             ]),
             html.Div(className="graph-card", style={"padding": "30px", "backgroundColor": "white", "borderRadius": "10px", "boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "marginBottom": "30px"}, children=[
                 html.H2("Objectives and Deliverables", style={"color": THEME_COLOR, "marginBottom": "20px"}),
@@ -1145,12 +1052,10 @@ def render_tab_content(active_tab):
         ])
 
     elif active_tab == "tab-framework":
-        fig_framework = get_framework_diagram()
         return html.Div(className="container", style={"maxWidth": "1200px"}, children=[
             html.Div(className="graph-card", style={"padding": "30px", "backgroundColor": "white", "borderRadius": "10px", "boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "marginBottom": "30px"}, children=[
                 html.H2("Customized WA+ Analytics for Jordan", style={"color": THEME_COLOR, "marginBottom": "20px"}),
                 dcc.Markdown(WA_FRAMEWORK_TEXT, className="markdown-content"),
-                dcc.Graph(id="framework-diagram", figure=fig_framework)
             ]),
             html.Div(className="graph-card", style={"padding": "30px", "backgroundColor": "white", "borderRadius": "10px", "boxShadow": "0 4px 6px rgba(0,0,0,0.1)"}, children=[
                 html.H2("Interactive Water Balance Simulator", style={"color": THEME_COLOR, "marginBottom": "20px"}),
@@ -1600,28 +1505,17 @@ def update_lu_map_and_coupling(basin):
 
     return fig_map, fig_bar
 
-def generate_wa_sheet_svg(basin, year):
+def generate_wa_sheet_svg(basin, start_year, end_year):
     """Generates the WA+ Sheet 1 SVG with data filled in."""
-    # 1. Load CSV
-    csv_path = os.path.join(BASIN_DIR, basin, "Results", "yearly", f"sheet1_{year}.csv")
-    if not os.path.exists(csv_path):
+    df = get_wa_data(basin, start_year, end_year)
+    if df.empty:
         return None
 
-    try:
-        df = pd.read_csv(csv_path, sep=';')
-    except Exception as e:
-        print(f"Error reading sheet1 csv: {e}")
-        return None
-
-    # Helper to get value
+    # Helper to get value from aggregated data
     def get_val(cls, sub, var):
-        # Filter
         row = df[(df['CLASS'] == cls) & (df['SUBCLASS'] == sub) & (df['VARIABLE'] == var)]
         if not row.empty:
-             try:
-                 return float(row.iloc[0]['VALUE'])
-             except:
-                 return 0.0
+            return float(row.iloc[0]['VALUE'])
         return 0.0
 
     # Extract raw values
@@ -1690,7 +1584,7 @@ def generate_wa_sheet_svg(basin, year):
         "return_flow_to_river": return_flow,
         
         "basin": basin,
-        "period": year
+        "period": f"{start_year}-{end_year}"
     }
     
     # Read SVG
@@ -1718,31 +1612,17 @@ def generate_wa_sheet_svg(basin, year):
     return f"data:image/svg+xml;base64,{encoded}"
 
 def update_wa_module(basin, start_year, end_year):
-    if not basin or basin == "none" or not start_year: return html.Div("Select basin and year"), _empty_fig(), ""
+    if not basin or basin == "none" or not start_year: return html.Div("Select basin and year"), ""
     ys, ye = int(start_year), int(end_year)
     
-    # Sheet 1 SVG (Use Start Year)
-    year = ys
-    svg_src = generate_wa_sheet_svg(basin, year)
+    svg_src = generate_wa_sheet_svg(basin, ys, ye)
     
     if svg_src:
         sheet_component = html.Img(src=svg_src, style={"width": "100%", "height": "auto"})
     else:
-        sheet_component = html.Div(f"No Sheet 1 data available for {year}", style={"padding": "20px", "textAlign": "center"})
+        sheet_component = html.Div(f"No Sheet 1 data available for {start_year}-{end_year}", style={"padding": "20px", "textAlign": "center"})
 
-    # Bar Chart
-    df = get_wa_data(basin, ys, ye)
-    if df.empty: 
-        fig_bar = _empty_fig("No Data for Bar Chart")
-    else:
-        sector_df = df[df['CLASS'] == 'OUTFLOW']
-        if sector_df.empty:
-            fig_bar = _empty_fig("No Outflow Data")
-        else:
-            fig_bar = px.bar(sector_df, x='VARIABLE', y='VALUE', color='SUBCLASS', barmode='group')
-            fig_bar.update_layout(plot_bgcolor='white', font=dict(family="Segoe UI"))
-
-    return sheet_component, fig_bar, html.Div("Indicators Placeholder")
+    return sheet_component, html.Div("Indicators Placeholder")
 
 # --- WRAPPER CALLBACKS ---
 
@@ -1787,11 +1667,12 @@ def update_lu_bar_wrapper(basin):
     return fig_bar
 
 @app.callback(
-    [Output("wa-resource-base-container", "children"), Output("wa-sectoral-bar", "figure"), Output("wa-indicators-container", "children")],
+    [Output("wa-resource-base-container", "children"), Output("wa-indicators-container", "children")],
     [Input("basin-dropdown", "value"), Input("global-start-year-dropdown", "value"), Input("global-end-year-dropdown", "value")]
 )
 def update_wa_wrapper(basin, start, end):
-    return update_wa_module(basin, start, end)
+    sheet_component, indicators = update_wa_module(basin, start, end)
+    return sheet_component, indicators
 
 
 @app.callback(
@@ -1886,94 +1767,17 @@ def update_land_use_table(basin):
     if df.empty:
         return html.Div("No Land Use details available.", style={"color": "#666"})
 
-    # Clean df: remove rows where Subclass (col 1) is empty
-    df = df[df.iloc[:, 1].astype(str).str.strip() != ""]
-
-    header = html.Thead(html.Tr([
-        html.Th("Water Management Class", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-        html.Th("Land and water use", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-        html.Th("Area (km2)", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-        html.Th("Area (km2)", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-        html.Th("Area (%)", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-        html.Th("P (mm)", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-        html.Th("ET (mm)", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-        html.Th("P-ET (mm)", style={"fontWeight": "bold", "backgroundColor": "#f8f9fa"}),
-    ]))
-
-    grouped = []
-    curr_class = None
-    curr_group = []
-
-    for _, row in df.iterrows():
-        cls = row.iloc[0]
-        if cls != curr_class:
-            if curr_group:
-                grouped.append((curr_class, curr_group))
-            curr_class = cls
-            curr_group = [row]
-        else:
-            curr_group.append(row)
-    if curr_group:
-        grouped.append((curr_class, curr_group))
-
-    total_area = 0.0
-    body_rows = []
-
-    # Colors matching the screenshot approximation
-    colors = {
-        "Natural": "#92aad1",      # Blue-ish
-        "Agricultural": "#a9d18e", # Green-ish
-        "Urban": "#f4b183"         # Orange-ish
-    }
-
-    for cls_name, group_rows in grouped:
-        rowspan = len(group_rows)
-        bg_color = colors.get(str(cls_name).strip(), "#ffffff")
-
-        for idx, row in enumerate(group_rows):
-            tr_children = []
-
-            # 1. Class (Merged)
-            if idx == 0:
-                tr_children.append(html.Td(cls_name, rowSpan=rowspan, style={"backgroundColor": bg_color, "verticalAlign": "middle", "fontWeight": "bold"}))
-
-            # 2. Subclass
-            tr_children.append(html.Td(row.iloc[1]))
-
-            # 3. Area Sub
-            try:
-                val = float(str(row.iloc[2]).replace(",", ""))
-                total_area += val
-                tr_children.append(html.Td(f"{val:.2f}"))
-            except (ValueError, TypeError):
-                tr_children.append(html.Td(row.iloc[2]))
-
-            # 4. Area Class (Merged) & 5. Area % (Merged)
-            if idx == 0:
-                tr_children.append(html.Td(row.iloc[3], rowSpan=rowspan, style={"verticalAlign": "middle", "textAlign": "center"}))
-                tr_children.append(html.Td(row.iloc[4], rowSpan=rowspan, style={"verticalAlign": "middle", "textAlign": "center"}))
-
-            # 6. P, 7. ET, 8. P-ET
-            tr_children.append(html.Td(row.iloc[5]))
-            tr_children.append(html.Td(row.iloc[6]))
-            tr_children.append(html.Td(row.iloc[7]))
-
-            body_rows.append(html.Tr(tr_children))
-
-    # Total Row
-    total_row = html.Tr([
-        html.Td(html.B("Total"), colSpan=2, style={"borderTop": "2px solid black"}),
-        html.Td(html.B(f"{total_area:.2f}"), style={"borderTop": "2px solid black"}),
-        html.Td(html.B(f"{total_area:.2f}"), style={"borderTop": "2px solid black", "textAlign": "center"}),
-        html.Td(html.B("100"), style={"borderTop": "2px solid black", "textAlign": "center"}),
-        html.Td("", style={"borderTop": "2px solid black"}),
-        html.Td("", style={"borderTop": "2px solid black"}),
-        html.Td("", style={"borderTop": "2px solid black"}),
-    ], style={"backgroundColor": "#ffffff"})
-
-    body_rows.append(total_row)
-
-    return html.Table([header, html.Tbody(body_rows)], className="table table-bordered table-sm table-hover", style={"fontSize": "0.85rem"})
+    return dash_table.DataTable(
+        columns=[{"name": i, "id": i} for i in df.columns],
+        data=df.to_dict('records'),
+        style_table={'overflowX': 'auto'},
+        style_cell={'textAlign': 'left'},
+        style_header={
+            'backgroundColor': 'rgb(230, 230, 230)',
+            'fontWeight': 'bold'
+        },
+        merge_duplicate_headers=True,
+    )
 
 @app.callback(
     Output("intro-search-results", "children"),
