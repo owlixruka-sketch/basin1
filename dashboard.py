@@ -185,7 +185,7 @@ def parse_wa_sheet(csv_file: str):
         cleaned_rows = []
         for _, row in df.iterrows():
             try:
-                val = float(row.get('VALUE', 0)) * 1000
+                val = float(row.get('VALUE', 0)) / 1000
             except (ValueError, TypeError):
                 val = 0
             
@@ -1011,7 +1011,7 @@ def get_modern_analysis_layout():
                          dbc.CardHeader("Resource Base (Sheet 1)", style={"fontWeight": "bold", "backgroundColor": "#eff6ff"}),
                          dbc.CardBody(dcc.Loading(html.Div(id="wa-resource-base-container"), type="circle"))
                     ], className="shadow-sm mb-4")
-                ], width=12, lg=12)
+                ], width=12, lg=6)
             ]),
             html.Div(id="wa-indicators-container", className="mt-3")
         ])
