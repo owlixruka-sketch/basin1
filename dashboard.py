@@ -222,6 +222,7 @@ def get_wa_data(basin_name: str, start_year: int, end_year: int):
     agg_df = combined_df.groupby(['CLASS', 'SUBCLASS', 'VARIABLE'])['VALUE'].mean().reset_index()
     return agg_df
 
+
 def get_basin_overview_metrics_for_range(basin_name: str, start_year: int, end_year: int):
     """Get comprehensive basin overview metrics averaged over a year range."""
     agg_df = get_wa_data(basin_name, start_year, end_year)
@@ -572,7 +573,7 @@ def make_basin_selector_map(selected_basin=None) -> go.Figure:
     locations = [f["properties"]["basin"] for f in gj["features"]]
     z_vals = [1] * len(locations)
 
-    ch = go.Choroplethmapbox(
+    ch = go.Choropleth(
         geojson=gj, locations=locations, featureidkey="properties.basin", z=z_vals,
         colorscale=[[0, "rgba(43, 88, 122, 0.4)"], [1, "rgba(43, 88, 122, 0.4)"]], # Theme color with alpha
         marker=dict(line=dict(width=4 if selected_basin and selected_basin != "all" else 2, color="black")),
@@ -699,7 +700,7 @@ class_info = {
 # ===========
 
 app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
-app.title = "Water Accounting Jordan"
+app.title = "Water Accounting Rapid Dashboard"
 
 basin_folders = [d for d in os.listdir(BASIN_DIR) if os.path.isdir(os.path.join(BASIN_DIR, d))] if os.path.isdir(BASIN_DIR) else []
 basin_options = [{"label": "Select a Basin...", "value": "none"}] + [{"label": b, "value": b} for b in sorted(basin_folders)]
@@ -1015,7 +1016,6 @@ def get_modern_analysis_layout():
             ]),
             html.Div(id="wa-indicators-container", className="mt-3")
         ])
-
     ], fluid=True, style={"paddingTop": "20px"})
 
 
@@ -1673,6 +1673,7 @@ def update_lu_bar_wrapper(basin):
 def update_wa_wrapper(basin, start, end):
     sheet_component, indicators = update_wa_module(basin, start, end)
     return sheet_component, indicators
+
 
 
 @app.callback(
