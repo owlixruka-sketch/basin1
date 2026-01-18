@@ -158,22 +158,43 @@ def find_yearly_csv(basin_name: str, year: int):
     return _first_existing(patterns)
 
 def parse_lu_csv(basin_name: str) -> pd.DataFrame:
-    """Parse lu.csv from basin folder."""
+    """Parse and reformat lu.csv from basin folder for merged-cell display."""
     csv_path = os.path.join(BASIN_DIR, basin_name, "lu.csv")
     if not os.path.exists(csv_path):
         return pd.DataFrame()
 
     try:
-        # Read with header
+        # Read with header, this will create duplicate column names
         df = pd.read_csv(csv_path)
 
-        # Drop rows that are all NaN
+        # --- Data Cleaning and Renaming ---
         df.dropna(how='all', inplace=True)
 
-        # Forward fill the first column (Class)
-        df.iloc[:, 0] = df.iloc[:, 0].ffill()
+        # Assign clear, unique column names
+        # The CSV structure is: Class, Subclass, Subclass_Area, Class_Area, Class_Area_Pct, P, ET, P-ET
+        new_cols = [
+            'Water Management Class', 'Land and water use', 'Subclass Area (km2)',
+            'Area (km2)', 'Area (%)', 'P (mm)', 'ET (mm)', 'P-ET (mm)'
+        ]
+        df.columns = new_cols
 
-        # Fill NaN with empty string for display
+        # --- Data Transformation for Merged Look ---
+        # Forward-fill the class-level data so all rows in a category have the same value
+        class_level_cols = ['Water Management Class', 'Area (km2)', 'Area (%)']
+        df[class_level_cols] = df[class_level_cols].ffill()
+
+        # Reorder columns to the user's specified layout
+        final_col_order = [
+            'Water Management Class', 'Area (km2)', 'Area (%)',
+            'Land and water use', 'Subclass Area (km2)',
+            'P (mm)', 'ET (mm)', 'P-ET (mm)'
+        ]
+        df = df[final_col_order]
+
+        # Rename the subclass area column for a cleaner header
+        df.rename(columns={'Subclass Area (km2)': 'Area (km2) '}, inplace=True)
+
+        # Replace remaining NaN values with empty strings for display
         df = df.fillna("")
 
         return df
@@ -1773,48 +1794,51 @@ def update_land_use_table(basin):
     if df.empty:
         return html.Div("No Land Use details available.", style={"color": "#666"})
 
-    first_col = df.columns[0]
-
-    # Define colors for categories
-    category_colors = {
-        'Natural': '#d9eaf5',      # Light blue
-        'Agricultural': '#dcf0dc', # Light green
-        'Urban': '#e6e6e6',        # Light grey
-    }
+    # Columns that should have the "merged" cell look
+    merged_columns = ['Water Management Class', 'Area (km2)', 'Area (%)']
 
     style_data_conditional = []
 
     # --- Logic to simulate merged cells ---
-    # Find the indices of rows that are duplicates in the first column
-    duplicate_indices = df[df[first_col].duplicated(keep='first')].index
+    # Find the indices of rows that are duplicates for the class-level data
+    duplicate_indices = df[df['Water Management Class'].duplicated(keep='first')].index
 
-    # For each duplicated row, hide the text and remove the top border to merge it with the cell above
-    if not duplicate_indices.empty:
-        style_data_conditional.append({
-            'if': {
-                'column_id': first_col,
-                'row_index': list(duplicate_indices)
-            },
-            'color': 'transparent',      # Hide the text
-            'borderTop': '0px', # Remove the border to the cell above
-        })
-
-    # Apply category-specific background colors and vertically align text
-    for category, color in category_colors.items():
-        # Find all indices for the current category
-        category_indices = df[df[first_col] == category].index
-        if not category_indices.empty:
+    for col in merged_columns:
+        # For each duplicated row, hide the text to merge it with the cell above
+        if not duplicate_indices.empty:
             style_data_conditional.append({
                 'if': {
-                    'column_id': first_col,
-                    'row_index': list(category_indices)
+                    'column_id': col,
+                    'row_index': list(duplicate_indices)
                 },
-                'backgroundColor': color,
-                'fontWeight': 'bold',
-                'verticalAlign': 'middle',
+                'color': 'transparent',      # Hide the text of duplicates
+                'borderTop': 'none', # Remove the top border to complete the merged look
             })
 
-    # Add a general rule for odd rows for the rest of the table
+    # --- Category Coloring and Vertical Alignment ---
+    category_colors = {
+        'Natural': '#d9eaf5',      # Light blue
+        'Agricultural': '#dcf0dc', # Light green
+        'Urban': '#e6e6e6',        # Light grey
+        'Total': '#f2f2f2'
+    }
+
+    for category, color in category_colors.items():
+        category_indices = df[df['Water Management Class'] == category].index
+        if not category_indices.empty:
+            for col in merged_columns:
+                style_data_conditional.append({
+                    'if': {
+                        'column_id': col,
+                        'row_index': list(category_indices)
+                    },
+                    'backgroundColor': color,
+                    'fontWeight': 'bold',
+                    'verticalAlign': 'middle',
+                })
+
+    # --- General Table Styling ---
+    # Add a general rule for alternating row colors for the non-merged columns
     style_data_conditional.append({
         'if': {'row_index': 'odd'},
         'backgroundColor': '#f8f9fa'
@@ -1828,7 +1852,8 @@ def update_land_use_table(basin):
             'textAlign': 'left',
             'padding': '10px',
             'fontFamily': 'sans-serif',
-            'border': '1px solid #dee2e6'
+            'borderLeft': '1px solid #dee2e6',
+            'borderRight': '1px solid #dee2e6',
         },
         style_header={
             'backgroundColor': '#f8f9fa',
