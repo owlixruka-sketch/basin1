@@ -1773,6 +1773,53 @@ def update_land_use_table(basin):
     if df.empty:
         return html.Div("No Land Use details available.", style={"color": "#666"})
 
+    first_col = df.columns[0]
+
+    # Define colors for categories
+    category_colors = {
+        'Natural': '#d9eaf5',      # Light blue
+        'Agricultural': '#dcf0dc', # Light green
+        'Urban': '#e6e6e6',        # Light grey
+    }
+
+    style_data_conditional = []
+
+    # --- Logic to simulate merged cells ---
+    # Find the indices of rows that are duplicates in the first column
+    duplicate_indices = df[df[first_col].duplicated(keep='first')].index
+
+    # For each duplicated row, hide the text and remove the top border to merge it with the cell above
+    if not duplicate_indices.empty:
+        style_data_conditional.append({
+            'if': {
+                'column_id': first_col,
+                'row_index': list(duplicate_indices)
+            },
+            'color': 'transparent',      # Hide the text
+            'borderTop': '0px', # Remove the border to the cell above
+        })
+
+    # Apply category-specific background colors and vertically align text
+    for category, color in category_colors.items():
+        # Find all indices for the current category
+        category_indices = df[df[first_col] == category].index
+        if not category_indices.empty:
+            style_data_conditional.append({
+                'if': {
+                    'column_id': first_col,
+                    'row_index': list(category_indices)
+                },
+                'backgroundColor': color,
+                'fontWeight': 'bold',
+                'verticalAlign': 'middle',
+            })
+
+    # Add a general rule for odd rows for the rest of the table
+    style_data_conditional.append({
+        'if': {'row_index': 'odd'},
+        'backgroundColor': '#f8f9fa'
+    })
+
     return dash_table.DataTable(
         columns=[{"name": i, "id": i} for i in df.columns],
         data=df.to_dict('records'),
@@ -1788,13 +1835,7 @@ def update_land_use_table(basin):
             'fontWeight': 'bold',
             'border': '1px solid #dee2e6'
         },
-        style_data_conditional=[
-            {
-                'if': {'row_index': 'odd'},
-                'backgroundColor': '#f8f9fa'
-            }
-        ],
-        merge_duplicate_headers=True
+        style_data_conditional=style_data_conditional
     )
 
 @app.callback(
