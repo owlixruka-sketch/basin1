@@ -7,6 +7,7 @@ import textwrap
 import calendar
 import base64
 import re
+import math
 
 import dash
 from dash import dcc, html, dash_table
@@ -165,6 +166,9 @@ def parse_lu_csv(basin_name: str) -> pd.DataFrame:
     try:
         # Read with header
         df = pd.read_csv(csv_path)
+
+        # Drop rows that are all NaN
+        df.dropna(how='all', inplace=True)
 
         # Forward fill the first column (Class)
         df.iloc[:, 0] = df.iloc[:, 0].ffill()
@@ -564,7 +568,7 @@ def _empty_fig(msg="No data to display"):
 # =========================
 
 def make_basin_selector_map(selected_basin=None) -> go.Figure:
-    gdf = ALL_BASINS_GDF if (not selected_basin or selected_basin == "all") else ALL_BASINS_GDF[ALL_BASINS_GDF["basin"] == selected_basin]
+    gdf = ALL_BASINS_GDF if (not selected_basin or selected_basin in ["all", "none"]) else ALL_BASINS_GDF[ALL_BASINS_GDF["basin"] == selected_basin]
     if gdf is None or gdf.empty:
         return _empty_fig("No basin shapefiles found.")
 
@@ -575,33 +579,35 @@ def make_basin_selector_map(selected_basin=None) -> go.Figure:
     ch = go.Choroplethmapbox(
         geojson=gj, locations=locations, featureidkey="properties.basin", z=z_vals,
         colorscale=[[0, "rgba(43, 88, 122, 0.4)"], [1, "rgba(43, 88, 122, 0.4)"]], # Theme color with alpha
-        marker=dict(line=dict(width=4 if selected_basin and selected_basin != "all" else 2, color="black")),
+        marker=dict(line=dict(width=4 if selected_basin and selected_basin not in ["all", "none"] else 2, color="black")),
         hovertemplate="%{location}<extra></extra>", showscale=False,
     )
     fig = go.Figure(ch)
 
     minx, miny, maxx, maxy = gdf.total_bounds
-    pad_x = (maxx - minx) * 0.08 if maxx > minx else 0.1
-    pad_y = (maxy - miny) * 0.08 if maxy > miny else 0.1
-    west, east = float(minx - pad_x), float(maxx + pad_x)
-    south, north = float(miny - pad_y), float(maxy + pad_y)
 
-    center_lon = (west + east) / 2.0
-    center_lat = (south + north) / 2.0
-    span_lon = max(east - west, 0.001)
-    span_lat = max(north - south, 0.001)
-
-    import math
-
-    # Default to Jordan if no basin selected
-    if not selected_basin or selected_basin == "all" or selected_basin == "none":
-        center_lon, center_lat = 36.6, 31.2
-        zoom = 7.0
+    # Handle cases where bounds might be invalid
+    if any(np.isinf([minx, miny, maxx, maxy])) or (minx == maxx or miny == maxy):
+        center_lon, center_lat, zoom = 36.6, 31.2, 7.0 # Default to Jordan
     else:
+        pad_x = (maxx - minx) * 0.1
+        pad_y = (maxy - miny) * 0.1
+        west, east = float(minx - pad_x), float(maxx + pad_x)
+        south, north = float(miny - pad_y), float(maxy + pad_y)
+
+        center_lon = (west + east) / 2.0
+        center_lat = (south + north) / 2.0
+
+        span_lon = max(east - west, 0.001)
+        span_lat = max(north - south, 0.001)
+
         map_w, map_h = 900.0, 600.0
-        lon_zoom = math.log2(360.0 / (span_lon * 1.1)) + math.log2(map_w / 512.0)
-        lat_zoom = math.log2(180.0 / (span_lat * 1.1)) + math.log2(map_h / 512.0)
-        zoom = max(0.0, min(16.0, lon_zoom, lat_zoom))
+        try:
+            lon_zoom = math.log2(360.0 / (span_lon * 1.1)) + math.log2(map_w / 512.0)
+            lat_zoom = math.log2(180.0 / (span_lat * 1.1)) + math.log2(map_h / 512.0)
+            zoom = max(0.0, min(16.0, lon_zoom, lat_zoom))
+        except (ValueError, ZeroDivisionError):
+            zoom = 7.0
 
     fig.update_layout(
         mapbox=dict(style="carto-positron", center=dict(lon=center_lon, lat=center_lat), zoom=zoom),
@@ -1770,13 +1776,25 @@ def update_land_use_table(basin):
     return dash_table.DataTable(
         columns=[{"name": i, "id": i} for i in df.columns],
         data=df.to_dict('records'),
-        style_table={'overflowX': 'auto'},
-        style_cell={'textAlign': 'left'},
-        style_header={
-            'backgroundColor': 'rgb(230, 230, 230)',
-            'fontWeight': 'bold'
+        style_table={'overflowX': 'auto', 'border': '1px solid #dee2e6'},
+        style_cell={
+            'textAlign': 'left',
+            'padding': '10px',
+            'fontFamily': 'sans-serif',
+            'border': '1px solid #dee2e6'
         },
-        merge_duplicate_headers=True,
+        style_header={
+            'backgroundColor': '#f8f9fa',
+            'fontWeight': 'bold',
+            'border': '1px solid #dee2e6'
+        },
+        style_data_conditional=[
+            {
+                'if': {'row_index': 'odd'},
+                'backgroundColor': '#f8f9fa'
+            }
+        ],
+        merge_duplicate_headers=True
     )
 
 @app.callback(
