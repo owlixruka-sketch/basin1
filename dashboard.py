@@ -7,6 +7,7 @@ import textwrap
 import calendar
 import base64
 import re
+import math
 
 import dash
 from dash import dcc, html, dash_table
@@ -157,19 +158,43 @@ def find_yearly_csv(basin_name: str, year: int):
     return _first_existing(patterns)
 
 def parse_lu_csv(basin_name: str) -> pd.DataFrame:
-    """Parse lu.csv from basin folder."""
+    """Parse and reformat lu.csv from basin folder for merged-cell display."""
     csv_path = os.path.join(BASIN_DIR, basin_name, "lu.csv")
     if not os.path.exists(csv_path):
         return pd.DataFrame()
 
     try:
-        # Read with header
+        # Read with header, this will create duplicate column names
         df = pd.read_csv(csv_path)
 
-        # Forward fill the first column (Class)
-        df.iloc[:, 0] = df.iloc[:, 0].ffill()
+        # --- Data Cleaning and Renaming ---
+        df.dropna(how='all', inplace=True)
 
-        # Fill NaN with empty string for display
+        # Assign clear, unique column names
+        # The CSV structure is: Class, Subclass, Subclass_Area, Class_Area, Class_Area_Pct, P, ET, P-ET
+        new_cols = [
+            'Water Management Class', 'Land and water use', 'Subclass Area (km2)',
+            'Area (km2)', 'Area (%)', 'P (mm)', 'ET (mm)', 'P-ET (mm)'
+        ]
+        df.columns = new_cols
+
+        # --- Data Transformation for Merged Look ---
+        # Forward-fill the class-level data so all rows in a category have the same value
+        class_level_cols = ['Water Management Class', 'Area (km2)', 'Area (%)']
+        df[class_level_cols] = df[class_level_cols].ffill()
+
+        # Reorder columns to the user's specified layout
+        final_col_order = [
+            'Water Management Class', 'Area (km2)', 'Area (%)',
+            'Land and water use', 'Subclass Area (km2)',
+            'P (mm)', 'ET (mm)', 'P-ET (mm)'
+        ]
+        df = df[final_col_order]
+
+        # Rename the subclass area column for a cleaner header
+        df.rename(columns={'Subclass Area (km2)': 'Area (km2) '}, inplace=True)
+
+        # Replace remaining NaN values with empty strings for display
         df = df.fillna("")
 
         return df
@@ -564,7 +589,7 @@ def _empty_fig(msg="No data to display"):
 # =========================
 
 def make_basin_selector_map(selected_basin=None) -> go.Figure:
-    gdf = ALL_BASINS_GDF if (not selected_basin or selected_basin == "all") else ALL_BASINS_GDF[ALL_BASINS_GDF["basin"] == selected_basin]
+    gdf = ALL_BASINS_GDF if (not selected_basin or selected_basin in ["all", "none"]) else ALL_BASINS_GDF[ALL_BASINS_GDF["basin"] == selected_basin]
     if gdf is None or gdf.empty:
         return _empty_fig("No basin shapefiles found.")
 
@@ -575,33 +600,35 @@ def make_basin_selector_map(selected_basin=None) -> go.Figure:
     ch = go.Choroplethmapbox(
         geojson=gj, locations=locations, featureidkey="properties.basin", z=z_vals,
         colorscale=[[0, "rgba(43, 88, 122, 0.4)"], [1, "rgba(43, 88, 122, 0.4)"]], # Theme color with alpha
-        marker=dict(line=dict(width=4 if selected_basin and selected_basin != "all" else 2, color="black")),
+        marker=dict(line=dict(width=4 if selected_basin and selected_basin not in ["all", "none"] else 2, color="black")),
         hovertemplate="%{location}<extra></extra>", showscale=False,
     )
     fig = go.Figure(ch)
 
     minx, miny, maxx, maxy = gdf.total_bounds
-    pad_x = (maxx - minx) * 0.08 if maxx > minx else 0.1
-    pad_y = (maxy - miny) * 0.08 if maxy > miny else 0.1
-    west, east = float(minx - pad_x), float(maxx + pad_x)
-    south, north = float(miny - pad_y), float(maxy + pad_y)
 
-    center_lon = (west + east) / 2.0
-    center_lat = (south + north) / 2.0
-    span_lon = max(east - west, 0.001)
-    span_lat = max(north - south, 0.001)
-
-    import math
-
-    # Default to Jordan if no basin selected
-    if not selected_basin or selected_basin == "all" or selected_basin == "none":
-        center_lon, center_lat = 36.6, 31.2
-        zoom = 7.0
+    # Handle cases where bounds might be invalid
+    if any(np.isinf([minx, miny, maxx, maxy])) or (minx == maxx or miny == maxy):
+        center_lon, center_lat, zoom = 36.6, 31.2, 7.0 # Default to Jordan
     else:
+        pad_x = (maxx - minx) * 0.1
+        pad_y = (maxy - miny) * 0.1
+        west, east = float(minx - pad_x), float(maxx + pad_x)
+        south, north = float(miny - pad_y), float(maxy + pad_y)
+
+        center_lon = (west + east) / 2.0
+        center_lat = (south + north) / 2.0
+
+        span_lon = max(east - west, 0.001)
+        span_lat = max(north - south, 0.001)
+
         map_w, map_h = 900.0, 600.0
-        lon_zoom = math.log2(360.0 / (span_lon * 1.1)) + math.log2(map_w / 512.0)
-        lat_zoom = math.log2(180.0 / (span_lat * 1.1)) + math.log2(map_h / 512.0)
-        zoom = max(0.0, min(16.0, lon_zoom, lat_zoom))
+        try:
+            lon_zoom = math.log2(360.0 / (span_lon * 1.1)) + math.log2(map_w / 512.0)
+            lat_zoom = math.log2(180.0 / (span_lat * 1.1)) + math.log2(map_h / 512.0)
+            zoom = max(0.0, min(16.0, lon_zoom, lat_zoom))
+        except (ValueError, ZeroDivisionError):
+            zoom = 7.0
 
     fig.update_layout(
         mapbox=dict(style="carto-positron", center=dict(lon=center_lon, lat=center_lat), zoom=zoom),
@@ -1767,16 +1794,73 @@ def update_land_use_table(basin):
     if df.empty:
         return html.Div("No Land Use details available.", style={"color": "#666"})
 
+    # Columns that should have the "merged" cell look
+    merged_columns = ['Water Management Class', 'Area (km2)', 'Area (%)']
+
+    style_data_conditional = []
+
+    # --- Logic to simulate merged cells ---
+    # Find the indices of rows that are duplicates for the class-level data
+    duplicate_indices = df[df['Water Management Class'].duplicated(keep='first')].index
+
+    for col in merged_columns:
+        # For each duplicated row, hide the text to merge it with the cell above
+        if not duplicate_indices.empty:
+            style_data_conditional.append({
+                'if': {
+                    'column_id': col,
+                    'row_index': list(duplicate_indices)
+                },
+                'color': 'transparent',      # Hide the text of duplicates
+                'borderTop': 'none', # Remove the top border to complete the merged look
+            })
+
+    # --- Category Coloring and Vertical Alignment ---
+    category_colors = {
+        'Natural': '#d9eaf5',      # Light blue
+        'Agricultural': '#dcf0dc', # Light green
+        'Urban': '#e6e6e6',        # Light grey
+        'Total': '#f2f2f2'
+    }
+
+    for category, color in category_colors.items():
+        category_indices = df[df['Water Management Class'] == category].index
+        if not category_indices.empty:
+            for col in merged_columns:
+                style_data_conditional.append({
+                    'if': {
+                        'column_id': col,
+                        'row_index': list(category_indices)
+                    },
+                    'backgroundColor': color,
+                    'fontWeight': 'bold',
+                    'verticalAlign': 'middle',
+                })
+
+    # --- General Table Styling ---
+    # Add a general rule for alternating row colors for the non-merged columns
+    style_data_conditional.append({
+        'if': {'row_index': 'odd'},
+        'backgroundColor': '#f8f9fa'
+    })
+
     return dash_table.DataTable(
         columns=[{"name": i, "id": i} for i in df.columns],
         data=df.to_dict('records'),
-        style_table={'overflowX': 'auto'},
-        style_cell={'textAlign': 'left'},
-        style_header={
-            'backgroundColor': 'rgb(230, 230, 230)',
-            'fontWeight': 'bold'
+        style_table={'overflowX': 'auto', 'border': '1px solid #dee2e6'},
+        style_cell={
+            'textAlign': 'left',
+            'padding': '10px',
+            'fontFamily': 'sans-serif',
+            'borderLeft': '1px solid #dee2e6',
+            'borderRight': '1px solid #dee2e6',
         },
-        merge_duplicate_headers=True,
+        style_header={
+            'backgroundColor': '#f8f9fa',
+            'fontWeight': 'bold',
+            'border': '1px solid #dee2e6'
+        },
+        style_data_conditional=style_data_conditional
     )
 
 @app.callback(
