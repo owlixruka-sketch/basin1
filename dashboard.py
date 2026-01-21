@@ -597,7 +597,7 @@ def make_basin_selector_map(selected_basin=None) -> go.Figure:
     locations = [f["properties"]["basin"] for f in gj["features"]]
     z_vals = [1] * len(locations)
 
-    ch = go.Choroplethmap(
+    ch = go.Choroplethmapbox(
         geojson=gj, locations=locations, featureidkey="properties.basin", z=z_vals,
         colorscale=[[0, "rgba(43, 88, 122, 0.4)"], [1, "rgba(43, 88, 122, 0.4)"]], # Theme color with alpha
         marker=dict(line=dict(width=4 if selected_basin and selected_basin not in ["all", "none"] else 2, color="black")),
@@ -631,7 +631,7 @@ def make_basin_selector_map(selected_basin=None) -> go.Figure:
             zoom = 7.0
 
     fig.update_layout(
-        map=dict(style="carto-positron", center=dict(lon=center_lon, lat=center_lat), zoom=zoom),
+        mapbox=dict(style="carto-positron", center=dict(lon=center_lon, lat=center_lat), zoom=zoom),
         margin=dict(l=0, r=0, t=0, b=0), uirevision=selected_basin if selected_basin else "all", clickmode="event+select", height=450,
     )
     return fig
