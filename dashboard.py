@@ -164,8 +164,11 @@ def parse_lu_csv(basin_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     try:
-        # Read with header, this will create duplicate column names
-        df = pd.read_csv(csv_path)
+        # Read with header, trying UTF-8 and falling back to latin-1 for robustness
+        try:
+            df = pd.read_csv(csv_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            df = pd.read_csv(csv_path, encoding='latin-1')
 
         # --- Data Cleaning and Renaming ---
         df.dropna(how='all', inplace=True)
@@ -1518,8 +1521,8 @@ def update_lu_map_and_coupling(basin):
         # Assuming 1 pixel = 1 km2
         stats.append({"Class": name, "Area_km2": float(c)})
     df_stats = pd.DataFrame(stats).sort_values("Area_km2", ascending=False).head(4)
-    fig_bar = px.bar(df_stats, x="Class", y="Area_km2", title="Top 4 Land Use Classes by Area", text_auto='.2s')
-    fig_bar.update_traces(marker_color=THEME_COLOR)
+    fig_bar = px.bar(df_stats, x="Class", y="Area_km2", title="Top 4 Land Use Classes by Area", template='plotly_white')
+    fig_bar.update_traces(marker_color=THEME_COLOR, texttemplate='%{y:.2s}', textposition='auto')
     fig_bar.update_layout(
         plot_bgcolor='white',
         font=dict(family="Segoe UI"),
