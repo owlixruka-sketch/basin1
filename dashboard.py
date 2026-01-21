@@ -361,64 +361,51 @@ def _repair_poly(geom):
     except Exception:
         return geom
 
-def load_all_basins_geodata() -> gpd.GeoDataFrame:
-    """Load ALL basins' shapefiles (exploded, fixed, EPSG:4326)."""
-    rows = []
-    if not os.path.isdir(BASIN_DIR):
-        return gpd.GeoDataFrame(columns=["basin", "geometry"], geometry="geometry", crs="EPSG:4326")
+def load_single_basin_geodata(b: str) -> gpd.GeoDataFrame | None:
+    """Load and process a single basin's shapefile."""
+    shp = find_shp_file(b)
+    if not shp or not os.path.exists(shp):
+        return None
+    try:
+        with fiona.open(shp) as src:
+            crs_wkt = src.crs_wkt
+            crs_obj = None
+            if crs_wkt:
+                try:
+                    crs_obj = gpd.GeoSeries([0], crs=crs_wkt).crs
+                except Exception:
+                    crs_obj = None
 
-    for b in sorted([d for d in os.listdir(BASIN_DIR) if os.path.isdir(os.path.join(BASIN_DIR, d))]):
-        shp = find_shp_file(b)
-        if not shp or not os.path.exists(shp):
-            continue
-        try:
-            with fiona.open(shp) as src:
-                crs_wkt = src.crs_wkt
-                crs_obj = None
-                if crs_wkt:
-                    try:
-                        crs_obj = gpd.GeoSeries([0], crs=crs_wkt).crs
-                    except Exception:
-                        crs_obj = None
-
-                geoms = []
-                for feat in src:
-                    if not feat or not feat.get("geometry"):
-                        continue
-                    geom = shp_shape(feat["geometry"])
-                    geom = _force_2d(geom)
-                    geom = _repair_poly(geom)
-                    if geom and not geom.is_empty and geom.geom_type in ("Polygon", "MultiPolygon"):
-                        geoms.append(geom)
-                if not geoms:
+            geoms = []
+            for feat in src:
+                if not feat or not feat.get("geometry"):
                     continue
+                geom = shp_shape(feat["geometry"])
+                geom = _force_2d(geom)
+                geom = _repair_poly(geom)
+                if geom and not geom.is_empty and geom.geom_type in ("Polygon", "MultiPolygon"):
+                    geoms.append(geom)
+            if not geoms:
+                return None
 
-                gdf = gpd.GeoDataFrame({"basin": [b]*len(geoms)}, geometry=geoms, crs=crs_obj or "EPSG:4326")
-                try:
-                    gdf = gdf.to_crs("EPSG:4326")
-                except Exception:
-                    gdf.set_crs("EPSG:4326", allow_override=True, inplace=True)
+            gdf = gpd.GeoDataFrame({"basin": [b]*len(geoms)}, geometry=geoms, crs=crs_obj or "EPSG:4326")
+            try:
+                gdf = gdf.to_crs("EPSG:4326")
+            except Exception:
+                gdf.set_crs("EPSG:4326", allow_override=True, inplace=True)
 
-                try:
-                    gdf = gdf.explode(index_parts=False).reset_index(drop=True)
-                except Exception:
-                    gdf = gdf.explode().reset_index(drop=True)
+            try:
+                gdf = gdf.explode(index_parts=False).reset_index(drop=True)
+            except Exception:
+                gdf = gdf.explode().reset_index(drop=True)
 
-                gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty]
-                rows.append(gdf[["basin", "geometry"]])
-        except Exception as e:
-            print(f"[WARN] Problem with {b}: {e}")
-            continue
+            gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty]
+            return gdf[["basin", "geometry"]]
+    except Exception as e:
+        print(f"[WARN] Problem with {b}: {e}")
+        return None
 
-    if not rows:
-        return gpd.GeoDataFrame(columns=["basin", "geometry"], geometry="geometry", crs="EPSG:4326")
-
-    return gpd.GeoDataFrame(pd.concat(rows, ignore_index=True), geometry="geometry", crs="EPSG:4326")
-
-ALL_BASINS_GDF = load_all_basins_geodata()
-
-def basins_geojson(gdf: gpd.GeoDataFrame | None = None):
-    gdf = ALL_BASINS_GDF if gdf is None else gdf
+def basins_geojson(gdf: gpd.GeoDataFrame):
     if gdf is None or gdf.empty:
         return {"type": "FeatureCollection", "features": []}
     feats = []
@@ -592,50 +579,78 @@ def _empty_fig(msg="No data to display"):
 # =========================
 
 def make_basin_selector_map(selected_basin=None) -> go.Figure:
-    gdf = ALL_BASINS_GDF if (not selected_basin or selected_basin in ["all", "none"]) else ALL_BASINS_GDF[ALL_BASINS_GDF["basin"] == selected_basin]
-    if gdf is None or gdf.empty:
-        return _empty_fig("No basin shapefiles found.")
+    # If a specific basin is selected, load its detailed geometry
+    if selected_basin and selected_basin not in ["all", "none"]:
+        gdf = load_single_basin_geodata(selected_basin)
+        if gdf is None or gdf.empty:
+            return _empty_fig(f"Shapefile not found for {selected_basin}.")
+    else:
+        # For the "all basins" view, create a simplified GDF with centroids
+        # This avoids loading all complex geometries into memory at once
+        rows = []
+        for b in sorted([d for d in os.listdir(BASIN_DIR) if os.path.isdir(os.path.join(BASIN_DIR, d))]):
+            shp = find_shp_file(b)
+            if not shp: continue
+            try:
+                temp_gdf = gpd.read_file(shp)
+                center = temp_gdf.union_all().centroid
+                rows.append({"basin": b, "geometry": center})
+            except Exception as e:
+                print(f"Could not process centroid for {b}: {e}")
+
+        if not rows:
+            return _empty_fig("No basin shapefiles found.")
+
+        gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
 
     gj = basins_geojson(gdf)
     locations = [f["properties"]["basin"] for f in gj["features"]]
     z_vals = [1] * len(locations)
 
-    ch = go.Choroplethmap(
-        geojson=gj, locations=locations, featureidkey="properties.basin", z=z_vals,
-        colorscale=[[0, "rgba(43, 88, 122, 0.4)"], [1, "rgba(43, 88, 122, 0.4)"]], # Theme color with alpha
-        marker=dict(line=dict(width=4 if selected_basin and selected_basin not in ["all", "none"] else 2, color="black")),
-        hovertemplate="%{location}<extra></extra>", showscale=False,
-    )
-    fig = go.Figure(ch)
+    is_detail_view = selected_basin and selected_basin not in ["all", "none"]
 
-    minx, miny, maxx, maxy = gdf.total_bounds
-
-    # Handle cases where bounds might be invalid
-    if any(np.isinf([minx, miny, maxx, maxy])) or (minx == maxx or miny == maxy):
-        center_lon, center_lat, zoom = 36.6, 31.2, 7.0 # Default to Jordan
+    if is_detail_view:
+        # For a single basin, show the polygon with an outline
+        trace = go.Choroplethmap(
+            geojson=gj, locations=locations, featureidkey="properties.basin", z=z_vals,
+            colorscale=[[0, "rgba(43, 88, 122, 0.4)"], [1, "rgba(43, 88, 122, 0.4)"]],
+            marker=dict(line=dict(width=4, color="black")),
+            hovertemplate="%{location}<extra></extra>", showscale=False,
+        )
     else:
-        pad_x = (maxx - minx) * 0.1
-        pad_y = (maxy - miny) * 0.1
-        west, east = float(minx - pad_x), float(maxx + pad_x)
-        south, north = float(miny - pad_y), float(maxy + pad_y)
+        # For the "all" view, show centroids as points
+        trace = go.Scattermap(
+            lon=gdf.geometry.x,
+            lat=gdf.geometry.y,
+            mode='markers+text',
+            marker=dict(size=15, color=THEME_COLOR, opacity=0.8),
+            text=gdf["basin"],
+            textposition="bottom center",
+            hovertemplate="%{text}<extra></extra>",
+        )
 
-        center_lon = (west + east) / 2.0
-        center_lat = (south + north) / 2.0
+    fig = go.Figure(trace)
 
-        span_lon = max(east - west, 0.001)
-        span_lat = max(north - south, 0.001)
-
-        map_w, map_h = 900.0, 600.0
-        try:
-            lon_zoom = math.log2(360.0 / (span_lon * 1.1)) + math.log2(map_w / 512.0)
-            lat_zoom = math.log2(180.0 / (span_lat * 1.1)) + math.log2(map_h / 512.0)
-            zoom = max(0.0, min(16.0, lon_zoom, lat_zoom))
-        except (ValueError, ZeroDivisionError):
-            zoom = 7.0
+    # Simplified zoom logic
+    if is_detail_view and not gdf.empty:
+         minx, miny, maxx, maxy = gdf.total_bounds
+         center_lon = (minx + maxx) / 2
+         center_lat = (miny + maxy) / 2
+         # Heuristic zoom calculation
+         lon_range = max(0.01, maxx - minx)
+         lat_range = max(0.01, maxy - miny)
+         zoom_lon = np.log2(360 / lon_range)
+         zoom_lat = np.log2(180 / lat_range)
+         zoom = min(zoom_lon, zoom_lat) * 0.9
+    else:
+        # Default view for all of Jordan
+        center_lon, center_lat, zoom = 36.6, 31.2, 6.5
 
     fig.update_layout(
         map=dict(style="carto-positron", center=dict(lon=center_lon, lat=center_lat), zoom=zoom),
-        margin=dict(l=0, r=0, t=0, b=0), uirevision=selected_basin if selected_basin else "all", clickmode="event+select", height=450,
+        margin=dict(l=0, r=0, t=0, b=0), uirevision=selected_basin if selected_basin else "all",
+        clickmode="event+select" if not is_detail_view else "", # Allow selection only in the main view
+        height=450,
     )
     return fig
 
@@ -1177,12 +1192,12 @@ def get_year_options(basin):
                     t = pd.to_datetime(ds["time"].values)
                     p_min, p_max = int(t.min().year), int(t.max().year)
         if et_fp:
-             with _open_xr_dataset(et_fp) as ds:
+            with _open_xr_dataset(et_fp) as ds:
                 if "time" in ds.coords and ds.sizes.get("time", 0) > 0:
                     t = pd.to_datetime(ds["time"].values)
                     et_min, et_max = int(t.min().year), int(t.max().year)
-    except:
-        pass
+    except Exception as e:
+        print(f"Error getting year options: {e}")
 
     start = min(p_min, et_min)
     end = max(p_max, et_max)
