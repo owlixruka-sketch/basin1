@@ -592,7 +592,7 @@ def make_basin_selector_map(selected_basin=None) -> go.Figure:
             shp = find_shp_file(b)
             if not shp: continue
             try:
-                temp_gdf = gpd.read_file(shp)
+                temp_gdf = gpd.read_file(shp).to_crs("EPSG:4326")
                 center = temp_gdf.union_all().centroid
                 rows.append({"basin": b, "geometry": center})
             except Exception as e:
@@ -649,7 +649,7 @@ def make_basin_selector_map(selected_basin=None) -> go.Figure:
     fig.update_layout(
         map=dict(style="carto-positron", center=dict(lon=center_lon, lat=center_lat), zoom=zoom),
         margin=dict(l=0, r=0, t=0, b=0), uirevision=selected_basin if selected_basin else "all",
-        clickmode="event+select" if not is_detail_view else "", # Allow selection only in the main view
+        clickmode="event+select" if not is_detail_view else "none",
         height=450,
     )
     return fig
